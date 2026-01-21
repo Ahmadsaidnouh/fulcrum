@@ -45,14 +45,16 @@ export const confirmCheckoutSession = asyncHandler(
     // TODO: In production, move webhook processing to a queue
     let event;
     // Get the signature sent by Stripe
-    const signature: any = request?.headers["stripe-signature"];
+    const signature: any = request.headers["stripe-signature"];
     console.log("<signature>", signature);
+    console.log("request.body = ", request.body);
+    console.log("process.env.STRIPE_WEBHOOK_SECRET = ", process.env.STRIPE_WEBHOOK_SECRET);
     
     try {
       event = stripe.webhooks.constructEvent(
         request.body,
         signature,
-        process.env.STRIPE_WEBHOOK_SECRET as string,
+        process.env.STRIPE_WEBHOOK_SECRET as string
       );
       console.log("<event>", event);
       
