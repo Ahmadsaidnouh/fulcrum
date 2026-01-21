@@ -10,6 +10,6 @@ const router = Router();
  * Stripe / Paymob / Checkout
  */
 router.post("/payments", handlePaymentWebhookValidator, handlePaymentWebhook);
-router.post("/confirmCheckSession", raw({type: 'application/json'}), confirmCheckoutSession);
+router.post("/confirmCheckSession", confirmCheckoutSession);
 
 export default router;

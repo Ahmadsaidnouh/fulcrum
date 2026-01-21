@@ -1,4 +1,4 @@
-import express, {Request, Response} from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import morgan from "morgan";
@@ -7,8 +7,12 @@ dotenv.config();
 import ApiError from "./src/utils/apiError";
 import globalError from "./src/middlewares/error.middleware";
 import dbConnection from "./src/config/database";
-import { authRoutes, orderRoutes, paymentRoutes, webhookRoutes } from "./src/routes/allroutes";
-
+import {
+  authRoutes,
+  orderRoutes,
+  paymentRoutes,
+  webhookRoutes,
+} from "./src/routes/allroutes";
 
 // Connect with db
 dbConnection();
@@ -17,9 +21,22 @@ dbConnection();
 const app = express();
 
 // Middlewares
-app.use(cors({
-  origin: "*"
-}));
+app.use(
+  cors({
+    origin: "*",
+  }),
+);
+
+/**
+ * Stripe webhooks MUST receive raw body
+ * This route must be registered BEFORE express.json()
+ */
+app.use(
+  `${process.env.PREFIX}/webhooks`,
+  express.raw({ type: "application/json" }),
+  webhookRoutes,
+);
+
 app.use(express.json());
 
 if (process.env.NODE_ENV === "development") {
@@ -34,7 +51,7 @@ app.get("/health", (req: Request, res: Response) => {
 app.use(`${process.env.PREFIX}/auth`, authRoutes);
 app.use(`${process.env.PREFIX}/orders`, orderRoutes);
 app.use(`${process.env.PREFIX}/payments`, paymentRoutes);
-app.use(`${process.env.PREFIX}/webhooks`, webhookRoutes);
+// app.use(`${process.env.PREFIX}/webhooks`, webhookRoutes);
 app.get("/", (req: Request, res: Response) => {
   res.status(200).json({ status: "Working Successfully" });
 });
@@ -56,7 +73,7 @@ process.on("unhandledRejection", (err: any) => {
   console.error(`UnhandledRejection Errors: ${err.name} | ${err.message}`);
   server.close(() => {
     // To make sure that all process will end only after server ends its pending ones
-    
+
     console.error(`Server is shutted down`);
     process.exit(1);
     // console.error(`Shutting down...`);
