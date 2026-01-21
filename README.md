@@ -1,8 +1,8 @@
-# 🧠 Scalable Payment & Order Processing System
+# ⚙️ Fulcrum — Scalable E-Commerce Platform
 
-A **production-inspired backend system** designed to demonstrate **senior-level backend engineering**, focusing on **correctness, scalability, reliability, and real-world payment flows**.
+**Fulcrum** is a production-inspired **e-commerce backend platform** designed to demonstrate **senior-level backend engineering**, focusing on **correctness, scalability, reliability, and real-world payment workflows**.
 
-This project simulates how **real e-commerce and food delivery platforms (Talabat, Uber Eats, Amazon)** handle **orders, payments, asynchronous processing, and external payment gateways**.
+The name *Fulcrum* reflects the system’s role as the **central control point** that enables distributed commerce operations — orders, payments, external gateways, and real-time client updates — to move safely and efficiently.
 
 ---
 
