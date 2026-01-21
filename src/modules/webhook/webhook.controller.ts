@@ -1,6 +1,10 @@
 import asyncHandler from "express-async-handler";
+import Stripe from "stripe";
+
 import paymentService from "../../services/payment.service";
 import ApiError from "../../utils/apiError";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
 /**
  * @desc    Handle payment gateway webhook
@@ -30,3 +34,51 @@ export const handlePaymentWebhook = asyncHandler(async (req, res) => {
   // 4️⃣ Gateway expects 200 OK always
   res.status(200).json({ received: true });
 });
+
+/**
+ * @desc    Handle payment gateway webhook
+ * @route   POST /api/v1/webhooks/payments
+ * @access  Public (secured via signature)
+ */
+export const confirmCheckoutSession = asyncHandler(
+  async (request: any, response: any) => {
+    // TODO: In production, move webhook processing to a queue
+    let event;
+    // Get the signature sent by Stripe
+    const signature: any = request?.headers["stripe-signature"];
+    console.log("<signature>", signature);
+    
+    try {
+      event = stripe.webhooks.constructEvent(
+        request.body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET as string,
+      );
+      console.log("<event>", event);
+      
+    } catch (err: any) {
+      console.log(`⚠️ Webhook signature verification failed.`, err.message);
+      return response.sendStatus(400);
+    }
+
+    // Handle the event
+    switch (event.type) {
+      case "payment_intent.succeeded":
+        const paymentIntent = event.data.object;
+        // Then define and call a method to handle the successful payment intent.
+        // handlePaymentIntentSucceeded(paymentIntent);
+        break;
+      case "payment_method.attached":
+        const paymentMethod = event.data.object;
+        // Then define and call a method to handle the successful attachment of a PaymentMethod.
+        // handlePaymentMethodAttached(paymentMethod);
+        break;
+      // ... handle other event types
+      default:
+        console.log(`Unhandled event type ${event.type}`);
+    }
+
+    // Return a response to acknowledge receipt of the event
+    response.json({ received: true });
+  },
+);
