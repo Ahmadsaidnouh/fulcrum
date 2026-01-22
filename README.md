@@ -227,3 +227,5 @@ It is a **platform-oriented system** designed to demonstrate:
 
 **Ahmad Said Nouh**  
 Software Engineer — Backend & Distributed Systems
+
+---
