@@ -8,7 +8,7 @@ The name *Fulcrum* reflects the system’s role as the **central control point**
 
 ## 📌 High-Level Architecture
 
-This system is intentionally designed around **real-world constraints**:
+Fulcrum is built around **real-world system constraints**:
 
 - Payments are **asynchronous**
 - External payment gateways are **event-driven**
@@ -36,12 +36,12 @@ Order State Update
 ↓
 Socket.IO → Client (Real-time updates)
 
-yaml
-Copy code
-
 ---
 
 ## 🏗️ Core Engineering Principles
+
+Fulcrum intentionally applies **industry-grade software engineering principles**:
+
 
 - Clean Architecture & Separation of Concerns
 - SOLID principles
@@ -57,29 +57,31 @@ Copy code
 
 ## 🔄 Order Lifecycle (State Machine)
 
-CREATED → PAID → SHIPPED
-→ CANCELLED
+Orders follow a strictly enforced lifecycle:
 
-yaml
-Copy code
+CREATED → PAID → SHIPPED → CANCELLED
 
+- No skipped states
 - No invalid transitions
 - No double payment
 - Enforced at service layer
 
 ---
 
-## 💳 Payment Flow
+## 💳 Payment Processing Model
 
-Payments are processed **asynchronously**, similar to real-world gateways.
+Payments are **asynchronous by design**, mirroring real-world gateways such as Stripe.
 
-1. Order creation
-2. Checkout session creation (Stripe)
-3. User completes payment on Stripe
-4. Stripe sends webhook event
-5. Backend confirms payment atomically
-6. Order is marked as PAID
-7. Client receives real-time update
+1. Order is created
+2. Checkout session is created with Stripe
+3. User completes payment via Stripe-hosted UI
+4. Stripe emits webhook events
+5. Backend validates and processes webhook
+6. Payment is confirmed atomically
+7. Order state is updated
+8. Client receives real-time status update
+
+Frontend redirects are **never trusted** as payment confirmation.
 
 ---
 
@@ -92,23 +94,27 @@ Payments are processed **asynchronously**, similar to real-world gateways.
 
 ### Atomicity
 - Payment confirmation and order update occur in a single transaction
+- Partial or inconsistent states are impossible
 
 ---
 
 ## 🔔 Webhooks (Source of Truth)
 
 - Webhooks are authoritative
-- Frontend redirects are never trusted
-- Payment status updates only happen via verified gateway events
-- Designed to safely handle retries
+- Designed to handle retries safely
+- Fast acknowledgment with reliable backend processing
+- Decoupled from frontend UX
 
 ---
 
-## ⚡ Real-Time Updates
+## ⚡ Real-Time Client Updates
 
-- Socket.IO is used to push payment status updates to clients
+Fulcrum uses **Socket.IO** to push real-time updates:
+
+- Payment processing status
+- Success or failure notifications
 - No polling
-- Immediate feedback (processing → success / failure)
+- Low latency, scalable UX
 
 ---
 
@@ -128,24 +134,21 @@ src/
 ├── routes/
 ├── utils/
 
-yaml
-Copy code
-
 ---
 
 ## 🛡️ Security Considerations
 
 ### Implemented
-- JWT authentication
+- JWT-based authentication
 - Authorization at service layer
-- Input validation
+- Input validation and sanitization
 - Secure error handling
 
-### Planned
+### Planned Enhancements
 - Request size limits
 - Brute-force protection (rate limiting)
 - Anti-CSRF tokens
-- HTTP Parameter Pollution prevention
+- HTTP parameter pollution prevention
 - NoSQL injection protection
 - Strict response shaping
 - Centralized security middleware
@@ -154,9 +157,10 @@ Copy code
 
 ## 🐳 Dockerization (Planned)
 
-- Dockerized backend service
+- Dockerized Node.js service
 - MongoDB container
-- Environment-based configs
+- Environment-based configuration
+- Reproducible development and production environments
 
 ---
 
@@ -168,14 +172,14 @@ Copy code
 - Deployment using:
   - Travis CI
   - AWS Elastic Beanstalk
-- Zero-downtime deployments
+- Zero-downtime deployment strategy
 
 ---
 
-## 📈 Observability (Planned)
+## 📈 Observability & Reliability (Planned)
 
 - Structured logging
-- Metrics and monitoring
+- Metrics collection
 - Health checks
 - Graceful shutdown handling
 
@@ -183,42 +187,43 @@ Copy code
 
 ## 🧪 Testing Strategy (Planned)
 
-- Unit tests
-- Integration tests
-- Webhook simulation
-- Concurrency testing
+- Unit tests for domain services
+- Integration tests for APIs
+- Webhook simulation tests
+- Concurrency and race-condition testing
 
 ---
 
 ## 🔮 Future Features
 
 - Stripe integration ✅
-- Refunds & partial refunds
+- Response compression
+- Refunds and partial refunds
 - Multiple payment providers
 - Shipment tracking
 - Admin dashboard
 - Background queues (RabbitMQ / SQS)
 - Redis caching
-- RBAC
+- Role-based access control (RBAC)
 - Payment reconciliation jobs
 
 ---
 
 ## 🎯 Project Purpose
 
-This project demonstrates **real-world backend system design**, not just CRUD operations.
+Fulcrum is **not a tutorial project**.
 
-It focuses on:
-- Correctness over shortcuts
+It is a **platform-oriented system** designed to demonstrate:
+- Real-world backend architecture
+- Correctness under concurrency
 - Reliability under failure
 - Scalability-ready architecture
-- Senior-level decision making
+- Asynchronous workflows
+- Senior-level engineering decisions
 
 ---
 
 ## 👨‍💻 Author
 
 **Ahmad Said Nouh**  
-Software Engineer — Backend & Distributed Systems  
-
----
+Software Engineer — Backend & Distributed Systems

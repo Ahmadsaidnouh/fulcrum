@@ -65,7 +65,7 @@ export const confirmCheckoutSession = asyncHandler(
 
     // Handle the event
     switch (event.type) {
-      case "payment_intent.succeeded":
+      case "checkout.session.completed":
         const paymentIntent = event.data.object;
         // Then define and call a method to handle the successful payment intent.
         // handlePaymentIntentSucceeded(paymentIntent);
@@ -81,6 +81,6 @@ export const confirmCheckoutSession = asyncHandler(
     }
 
     // Return a response to acknowledge receipt of the event
-    response.json({ received: true });
+    response.status(200).json({ received: true });
   },
 );
