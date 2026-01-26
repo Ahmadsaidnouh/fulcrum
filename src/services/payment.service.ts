@@ -76,6 +76,7 @@ const createPayment = async function (
   }
 };
 
+// not used now
 const confirmPayment = async (paymentId: string) => {
   const session = await mongoose.startSession();
 
@@ -131,6 +132,7 @@ const confirmPayment = async (paymentId: string) => {
   }
 };
 
+// not used now
 const failPayment = async (paymentId: string) => {
   const session = await mongoose.startSession();
 
@@ -198,16 +200,75 @@ const createCheckoutSession = async (userId: string, orderId: string) => {
   return session;
 };
 
-const confirmStripePayment = async (
-  stripSession: Stripe.Checkout.Session
+// payment.service.ts - improve confirmStripePayment
+const confirmStripePayment = async (stripSession: Stripe.Checkout.Session) => {
+  const metadata: any = stripSession.metadata;
+  // const paymentIntentId = stripSession.payment_intent;
+  const sessionId = stripSession.id;
+
+  const orderId = metadata.orderId;
+  const userId = metadata.userId;
+
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    // Use findByIdAndUpdate with strict conditions instead of separate read/write
+    const order: any = await Order.findByIdAndUpdate(
+      orderId,
+      { status: "PAID" },
+      {
+        new: true,
+        session,
+        strict: true,
+        // Only update if status is still CREATED
+        runValidators: true,
+      },
+    )
+      .where("status")
+      .equals("CREATED")
+      .where("userId")
+      .equals(userId);
+
+    if (!order) {
+      throw new ApiError("Order not found or already processed", 400);
+    }
+
+    const [payment] = await Payment.create(
+      [
+        {
+          orderId,
+          amount: order.amount,
+          provider: "STRIPE",
+          externalRef: sessionId,
+          status: "SUCCESS",
+        },
+      ],
+      { session },
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+    return payment;
+  } catch (err: any) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
+  }
+};
+
+// not used now
+const confirmStripePaymentOldVersion = async (
+  stripSession: Stripe.Checkout.Session,
 ) => {
   const metadata: any = stripSession.metadata;
   // const paymentIntentId = stripSession.payment_intent;
   const sessionId = stripSession.id;
-  
+
   const orderId = metadata.orderId;
   const userId = metadata.userId;
-  
+
   const session = await mongoose.startSession();
   session.startTransaction();
 

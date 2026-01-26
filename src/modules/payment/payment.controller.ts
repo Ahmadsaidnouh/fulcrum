@@ -31,36 +31,9 @@ const confirmPayment = asyncHandler(async (req: any, res) => {
   res.status(200).json({ data: payment });
 });
 
-// const createCheckoutSession = asyncHandler(async (req: any, res) => {
-//   const payment = await paymentService.createPayment(
-//     req.user._id.toString(),
-//     req.body.orderId,
-//     req.body.idempotencyKey ? req.body.idempotencyKey : null,
-//   );
-
-//   const session = await stripe.checkout.sessions.create({
-//     line_items: [
-//       {
-//         price_data: {
-//           currency: "egp",
-//           product_data: {
-//             name: "Order Payment",
-//           },
-//           unit_amount: payment.amount ? payment.amount * 100 : 0, // Stripe expects amount in cents
-//         },
-//         quantity: 1,
-//       },
-//     ],
-//     mode: "payment",
-//     // success_url: `${process.env.FRONTEND_URL}/success`,
-//     // cancel_url: `${process.env.FRONTEND_URL}/cancel`,
-//     success_url: `https://google.com`,
-//     cancel_url: `https://google.com`,
-//   });
-
-//   res.status(200).json({ data: session });
-// });
-
+// @desc    Create a Stripe checkout session
+// @route   POST /api/v1/payments/createCheckoutSession
+// @access  Private
 const createCheckoutSession = asyncHandler(async (req: any, res) => {
   const session = await paymentService.createCheckoutSession(
     req.user._id.toString(),
