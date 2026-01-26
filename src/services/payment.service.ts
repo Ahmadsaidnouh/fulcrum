@@ -202,9 +202,16 @@ const createCheckoutSession = async (userId: string, orderId: string) => {
 
 // payment.service.ts - improve confirmStripePayment
 const confirmStripePayment = async (stripSession: Stripe.Checkout.Session) => {
+  /**
+   * 4242424242424242
+   * 4000002500003155
+   * 4000000000009995
+   */
+
   const metadata: any = stripSession.metadata;
   // const paymentIntentId = stripSession.payment_intent;
   const sessionId = stripSession.id;
+  const stripAmount = stripSession.amount_total ? (stripSession.amount_total / 100) : 0; // Convert from cents
 
   const orderId = metadata.orderId;
   const userId = metadata.userId;
@@ -229,9 +236,12 @@ const confirmStripePayment = async (stripSession: Stripe.Checkout.Session) => {
       .where("status")
       .equals("CREATED")
       .where("userId")
-      .equals(userId);
+      .equals(userId)
+      .where("amount")
+      .equals(stripAmount);
 
     if (!order) {
+      // need to check to make this retry safe (don't throw error is order is paid)
       throw new ApiError("Order not found or already processed", 400);
     }
 
