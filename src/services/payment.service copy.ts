@@ -10,8 +10,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 const createPayment = async function (
   userId: string,
   orderId: string,
-  idempotencyKey: string,
-  provider: string,
+  idempotencyKey: string
 ) {
   // Enhancement: see how to make this ATOMIC "wrap in one transaction"
   const session = await mongoose.startSession();
@@ -48,10 +47,9 @@ const createPayment = async function (
             amount: order.amount,
             status: "PENDING",
             ...(idempotencyKey && { idempotencyKey }), // include if only exists
-            provider,
           },
         ],
-        { session },
+        { session }
       );
 
       await session.commitTransaction();
@@ -101,7 +99,7 @@ const confirmPayment = async (paymentId: string) => {
     if (payment.status === "FAILED" || payment.status === "CANCELLED") {
       throw new ApiError(
         `Cannot confirm a ${payment.status.toLowerCase()} payment`,
-        400,
+        400
       );
     }
 
@@ -176,9 +174,9 @@ const createCheckoutSession = async (userId: string, orderId: string) => {
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    // payment_intent_data: {
-    // },
-    metadata: { orderId, userId },
+    payment_intent_data: {
+      metadata: { orderId, userId },
+    },
     line_items: [
       {
         price_data: {
@@ -189,8 +187,8 @@ const createCheckoutSession = async (userId: string, orderId: string) => {
         quantity: 1,
       },
     ],
-    //     // success_url: `${process.env.FRONTEND_URL}/success`,
-    //     // cancel_url: `${process.env.FRONTEND_URL}/cancel`,
+//     // success_url: `${process.env.FRONTEND_URL}/success`,
+//     // cancel_url: `${process.env.FRONTEND_URL}/cancel`,
     success_url: `https://google.com`,
     cancel_url: `https://googlee.com`,
   });
@@ -198,78 +196,4 @@ const createCheckoutSession = async (userId: string, orderId: string) => {
   return session;
 };
 
-const confirmStripePayment = async (
-  stripSession: Stripe.Checkout.Session
-) => {
-  const metadata: any = stripSession.metadata;
-  // const paymentIntentId = stripSession.payment_intent;
-  const sessionId = stripSession.id;
-  
-  const orderId = metadata.orderId;
-  const userId = metadata.userId;
-  
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    const order: any = await Order.findById(orderId).session(session);
-    if (!order) throw new ApiError("Order not found", 404);
-
-    if (order.userId.toString() !== userId) {
-      throw new ApiError("You are not allowed to pay for this order", 403);
-    }
-
-    if (order.status !== "CREATED") {
-      throw new ApiError("Order is not eligible for payment", 400);
-    }
-
-    // No need now checked by payment.index
-    // // Idempotency from Stripe
-    // let payment: any = await Payment.findOne({
-    //   externalRef: paymentIntentId,
-    // }).session(session);
-
-    try {
-      const [payment] = await Payment.create(
-        [
-          {
-            orderId,
-            amount: order.amount,
-            provider: "STRIPE",
-            externalRef: sessionId,
-            status: "SUCCESS",
-          },
-        ],
-        { session },
-      );
-
-      order.status = "PAID";
-      await order.save({ session });
-
-      await session.commitTransaction();
-      session.endSession();
-
-      return payment;
-    } catch (err: any) {
-      console.log("err1 = " + err);
-
-      if (err.code === 11000) {
-        throw new ApiError("Payment already exists for this order", 400);
-      }
-      throw err;
-      // this error will propagate to the outer try-catch
-    }
-  } catch (e) {
-    await session.abortTransaction();
-    session.endSession();
-    throw e;
-  }
-};
-
-export default {
-  createPayment,
-  confirmPayment,
-  failPayment,
-  createCheckoutSession,
-  confirmStripePayment,
-};
+export default { createPayment, confirmPayment, failPayment, createCheckoutSession };

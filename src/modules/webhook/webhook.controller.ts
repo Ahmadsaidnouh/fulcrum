@@ -67,8 +67,10 @@ export const confirmCheckoutSession = asyncHandler(
     switch (event.type) {
       case "checkout.session.completed":
         const session = event.data.object;
+        console.log("inside checkout.session.completed");
+        
         // call your service:
-        // paymentService.confirmStripeCheckout(session)
+        await paymentService.confirmStripePayment(session);
         break;
 
       default:

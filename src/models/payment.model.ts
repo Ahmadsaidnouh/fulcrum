@@ -13,8 +13,19 @@ const paymentSchema = new Schema(
       default: "PENDING",
       index: true,
     },
+    provider: {
+      type: String,
+      enum: ["CASH", "STRIPE"],
+      required: true,
+      index: true,
+    },
+    externalRef: {
+      type: String, // Stripe payment_intent or session ID
+      index: true,
+    },
+    paidAt: Date,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 /**
@@ -40,7 +51,7 @@ paymentSchema.index(
     partialFilterExpression: {
       status: { $in: ["PENDING", "SUCCESS"] },
     },
-  }
+  },
 );
 
 /**
@@ -60,7 +71,25 @@ paymentSchema.index(
     partialFilterExpression: {
       idempotencyKey: { $exists: true },
     },
-  }
+  },
+);
+
+/**
+ * STRIPE IDEMPOTENCY GUARANTEE:
+ * Ensures the same Stripe payment_intent/session
+ * cannot be processed more than once.
+ *
+ * Stripe retries webhooks aggressively, so this
+ * protects against duplicate payment creation.
+ */
+paymentSchema.index(
+  { externalRef: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      externalRef: { $exists: true },
+    },
+  },
 );
 
 const Payment = model("Payment", paymentSchema);
