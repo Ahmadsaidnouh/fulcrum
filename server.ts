@@ -12,6 +12,7 @@ import {
   orderRoutes,
   paymentRoutes,
   webhookRoutes,
+  staticRoutes,
 } from "./src/routes/allroutes";
 
 // Connect with db
@@ -51,6 +52,7 @@ app.get("/health", (req: Request, res: Response) => {
 app.use(`${process.env.PREFIX}/auth`, authRoutes);
 app.use(`${process.env.PREFIX}/orders`, orderRoutes);
 app.use(`${process.env.PREFIX}/payments`, paymentRoutes);
+app.use(`/static`, staticRoutes);
 // app.use(`${process.env.PREFIX}/webhooks`, webhookRoutes);
 app.get("/", (req: Request, res: Response) => {
   res.status(200).json({ status: "Working Successfully" });

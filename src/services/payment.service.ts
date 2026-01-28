@@ -191,10 +191,10 @@ const createCheckoutSession = async (userId: string, orderId: string) => {
         quantity: 1,
       },
     ],
-    //     // success_url: `${process.env.FRONTEND_URL}/success`,
-    //     // cancel_url: `${process.env.FRONTEND_URL}/cancel`,
-    success_url: `https://google.com`,
-    cancel_url: `https://googlee.com`,
+    success_url: `${process.env.BACKEND_URL}/static/success`,
+    cancel_url: `${process.env.BACKEND_URL}/static/cancel`,
+    // success_url: `https://google.com`,
+    // cancel_url: `https://googlee.com`,
   });
 
   return session;
@@ -211,7 +211,9 @@ const confirmStripePayment = async (stripSession: Stripe.Checkout.Session) => {
   const metadata: any = stripSession.metadata;
   // const paymentIntentId = stripSession.payment_intent;
   const sessionId = stripSession.id;
-  const stripAmount = stripSession.amount_total ? (stripSession.amount_total / 100) : 0; // Convert from cents
+  const stripAmount = stripSession.amount_total
+    ? stripSession.amount_total / 100
+    : 0; // Convert from cents
 
   const orderId = metadata.orderId;
   const userId = metadata.userId;
