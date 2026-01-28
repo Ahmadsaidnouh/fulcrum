@@ -21,7 +21,7 @@ const paymentSchema = new Schema(
     },
     externalRef: {
       type: String, // Stripe payment_intent or session ID
-      index: true,
+      // index: true,
     },
     paidAt: Date,
   },
