@@ -1,0 +1,802 @@
+// ============================================================================
+// 1. SOCKET.IO SERVER SETUP & AUTHENTICATION
+// ============================================================================
+
+// src/config/socket.ts
+import { Server as HTTPServer } from "http";
+import { Server, Socket } from "socket.io";
+import jwt from "jsonwebtoken";
+import logger from "../utils/logger";
+
+interface AuthenticatedSocket extends Socket {
+  userId?: string;
+  sessionId?: string;
+}
+
+export const initializeSocket = (httpServer: HTTPServer): Server => {
+  const io = new Server(httpServer, {
+    cors: {
+      origin: process.env.FRONTEND_URL,
+      methods: ["GET", "POST"],
+      credentials: true,
+    },
+    transports: ["websocket", "polling"], // Fallback to polling if WebSocket fails
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: 5,
+  });
+
+  // Middleware: Authenticate socket connection
+  io.use(async (socket: AuthenticatedSocket, next) => {
+    try {
+      const token = socket.handshake.auth.token;
+      
+      if (!token) {
+        return next(new Error("Authentication failed: No token provided"));
+      }
+
+      const decoded: any = jwt.verify(
+        token,
+        process.env.JWT_SECRET as string
+      );
+
+      socket.userId = decoded._id;
+      socket.sessionId = socket.id;
+
+      logger.info(`Socket authenticated`, {
+        userId: socket.userId,
+        socketId: socket.sessionId,
+      });
+
+      next();
+    } catch (err: any) {
+      logger.error(`Socket authentication failed: ${err.message}`);
+      next(new Error(`Authentication failed: ${err.message}`));
+    }
+  });
+
+  // Connection handler
+  io.on("connection", (socket: AuthenticatedSocket) => {
+    logger.info(`User ${socket.userId} connected to payment notifications`);
+
+    // Join user-specific room for private notifications
+    socket.join(`user:${socket.userId}`);
+    socket.join(`user:${socket.userId}:payments`);
+
+    socket.on("disconnect", () => {
+      logger.info(`User ${socket.userId} disconnected`);
+    });
+  });
+
+  return io;
+};
+
+// ============================================================================
+// 2. PAYMENT SOCKET SERVICE (Notification Layer)
+// ============================================================================
+
+// src/services/paymentSocket.service.ts
+import { Server } from "socket.io";
+import logger from "../utils/logger";
+
+class PaymentSocketService {
+  private io: Server;
+
+  constructor(io: Server) {
+    this.io = io;
+  }
+
+  /**
+   * Notify user of successful payment
+   * Called after Stripe webhook confirms payment
+   */
+  notifyPaymentSuccess(
+    userId: string,
+    paymentData: {
+      paymentId: string;
+      orderId: string;
+      amount: number;
+      provider: string;
+      confirmedAt: Date;
+    }
+  ): void {
+    try {
+      const room = `user:${userId}:payments`;
+      
+      this.io.to(room).emit("payment:success", {
+        status: "SUCCESS",
+        data: {
+          paymentId: paymentData.paymentId,
+          orderId: paymentData.orderId,
+          amount: paymentData.amount,
+          provider: paymentData.provider,
+          confirmedAt: paymentData.confirmedAt,
+          timestamp: new Date(),
+        },
+      });
+
+      logger.info(`Payment success notification sent`, {
+        userId,
+        paymentId: paymentData.paymentId,
+        orderId: paymentData.orderId,
+      });
+    } catch (err: any) {
+      logger.error(`Failed to send payment success notification`, {
+        userId,
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Notify user of payment failure
+   */
+  notifyPaymentFailure(
+    userId: string,
+    failureData: {
+      paymentId: string;
+      orderId: string;
+      reason: string;
+      retryable: boolean;
+    }
+  ): void {
+    try {
+      const room = `user:${userId}:payments`;
+      
+      this.io.to(room).emit("payment:failure", {
+        status: "FAILED",
+        data: {
+          paymentId: failureData.paymentId,
+          orderId: failureData.orderId,
+          reason: failureData.reason,
+          retryable: failureData.retryable,
+          timestamp: new Date(),
+        },
+      });
+
+      logger.info(`Payment failure notification sent`, {
+        userId,
+        paymentId: failureData.paymentId,
+        reason: failureData.reason,
+      });
+    } catch (err: any) {
+      logger.error(`Failed to send payment failure notification`, {
+        userId,
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Broadcast payment processing status (real-time progress)
+   */
+  notifyPaymentProcessing(
+    userId: string,
+    processingData: {
+      paymentId: string;
+      orderId: string;
+      step: "validating" | "charging" | "confirming" | "completing";
+      message: string;
+    }
+  ): void {
+    try {
+      const room = `user:${userId}:payments`;
+      
+      this.io.to(room).emit("payment:processing", {
+        status: "PROCESSING",
+        data: {
+          paymentId: processingData.paymentId,
+          orderId: processingData.orderId,
+          step: processingData.step,
+          message: processingData.message,
+          timestamp: new Date(),
+        },
+      });
+
+      logger.debug(`Payment processing status sent`, {
+        userId,
+        paymentId: processingData.paymentId,
+        step: processingData.step,
+      });
+    } catch (err: any) {
+      logger.error(`Failed to send payment processing notification`, {
+        userId,
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Notify about refund completion
+   */
+  notifyRefundProcessed(
+    userId: string,
+    refundData: {
+      paymentId: string;
+      orderId: string;
+      amount: number;
+      reason: string;
+    }
+  ): void {
+    try {
+      const room = `user:${userId}:payments`;
+      
+      this.io.to(room).emit("payment:refunded", {
+        status: "REFUNDED",
+        data: {
+          paymentId: refundData.paymentId,
+          orderId: refundData.orderId,
+          amount: refundData.amount,
+          reason: refundData.reason,
+          timestamp: new Date(),
+        },
+      });
+
+      logger.info(`Refund notification sent`, {
+        userId,
+        paymentId: refundData.paymentId,
+        amount: refundData.amount,
+      });
+    } catch (err: any) {
+      logger.error(`Failed to send refund notification`, {
+        userId,
+        error: err.message,
+      });
+    }
+  }
+
+  /**
+   * Get connected users for monitoring
+   */
+  getConnectedUsers(): number {
+    return this.io.engine.clientsCount;
+  }
+}
+
+export default PaymentSocketService;
+
+// ============================================================================
+// 3. ENHANCED PAYMENT SERVICE (With Socket Integration)
+// ============================================================================
+
+// src/services/payment.service.ts (UPDATED)
+import mongoose from "mongoose";
+import Stripe from "stripe";
+import Order from "../models/order.model";
+import Payment from "../models/payment.model";
+import ApiError from "../utils/apiError";
+import PaymentSocketService from "./paymentSocket.service";
+import logger from "../utils/logger";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+
+export default class PaymentService {
+  private socketService: PaymentSocketService;
+
+  constructor(socketService: PaymentSocketService) {
+    this.socketService = socketService;
+  }
+
+  async createPayment(
+    userId: string,
+    orderId: string,
+    idempotencyKey: string,
+    provider: string,
+  ) {
+    const session = await mongoose.startSession();
+
+    try {
+      session.startTransaction();
+
+      const order: any = await Order.findById(orderId).session(session);
+      if (!order) throw new ApiError("Order not found", 404);
+
+      if (order.userId.toString() !== userId) {
+        throw new ApiError("You are not allowed to pay for this order", 403);
+      }
+
+      if (order.status !== "CREATED") {
+        throw new ApiError("Order is not eligible for payment", 400);
+      }
+
+      try {
+        const [payment] = await Payment.create(
+          [
+            {
+              orderId,
+              amount: order.amount,
+              status: "PENDING",
+              ...(idempotencyKey && { idempotencyKey }),
+              provider,
+            },
+          ],
+          { session },
+        );
+
+        // Notify frontend that payment is pending
+        this.socketService.notifyPaymentProcessing(userId, {
+          paymentId: payment._id.toString(),
+          orderId,
+          step: "validating",
+          message: "Payment initiated. Please complete the payment.",
+        });
+
+        await session.commitTransaction();
+        session.endSession();
+
+        return payment;
+      } catch (err: any) {
+        if (err.code === 11000) {
+          throw new ApiError("Payment already exists for this order", 400);
+        }
+        throw err;
+      }
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
+  }
+
+  /**
+   * CRITICAL: Called from Stripe webhook
+   * Confirms payment and notifies frontend in real-time
+   */
+  async confirmStripePayment(
+    stripSession: Stripe.Checkout.Session
+  ) {
+    const { orderId, userId } = stripSession.metadata as {
+      orderId: string;
+      userId: string;
+    };
+    const sessionId = stripSession.id;
+
+    const dbSession = await mongoose.startSession();
+
+    try {
+      logger.info(`Starting Stripe payment confirmation`, {
+        orderId,
+        userId,
+        sessionId,
+      });
+
+      // Step 1: Validating
+      this.socketService.notifyPaymentProcessing(userId, {
+        paymentId: sessionId,
+        orderId,
+        step: "validating",
+        message: "Validating payment details...",
+      });
+
+      dbSession.startTransaction();
+
+      const order: any = await Order.findById(orderId).session(dbSession);
+      if (!order) throw new ApiError("Order not found", 404);
+
+      if (order.userId.toString() !== userId) {
+        throw new ApiError("You are not allowed to pay for this order", 403);
+      }
+
+      if (order.status !== "CREATED") {
+        throw new ApiError("Order is not eligible for payment", 400);
+      }
+
+      // Verify amount to prevent tampering
+      const stripAmount = stripSession.amount_total! / 100;
+      if (stripAmount !== order.amount) {
+        logger.error(`Amount mismatch detected`, {
+          orderId,
+          expected: order.amount,
+          received: stripAmount,
+        });
+
+        this.socketService.notifyPaymentFailure(userId, {
+          paymentId: sessionId,
+          orderId,
+          reason: "Payment amount mismatch",
+          retryable: false,
+        });
+
+        throw new ApiError("Payment amount mismatch", 400);
+      }
+
+      // Step 2: Charging
+      this.socketService.notifyPaymentProcessing(userId, {
+        paymentId: sessionId,
+        orderId,
+        step: "charging",
+        message: "Processing charge...",
+      });
+
+      try {
+        const [payment] = await Payment.create(
+          [
+            {
+              orderId,
+              amount: order.amount,
+              provider: "STRIPE",
+              externalRef: sessionId,
+              status: "SUCCESS",
+              paidAt: new Date(),
+            },
+          ],
+          { dbSession },
+        );
+
+        // Step 3: Confirming
+        this.socketService.notifyPaymentProcessing(userId, {
+          paymentId: payment._id.toString(),
+          orderId,
+          step: "confirming",
+          message: "Confirming payment...",
+        });
+
+        // Update order status
+        order.status = "PAID";
+        order.paidAt = new Date();
+        await order.save({ session: dbSession });
+
+        await dbSession.commitTransaction();
+        dbSession.endSession();
+
+        // Step 4: Completing - Send final success notification
+        this.socketService.notifyPaymentSuccess(userId, {
+          paymentId: payment._id.toString(),
+          orderId,
+          amount: order.amount,
+          provider: "STRIPE",
+          confirmedAt: new Date(),
+        });
+
+        logger.info(`Payment confirmed successfully`, {
+          paymentId: payment._id,
+          orderId,
+          userId,
+        });
+
+        return payment;
+      } catch (err: any) {
+        if (err.code === 11000) {
+          logger.warn(`Duplicate payment creation attempt`, {
+            orderId,
+            sessionId,
+          });
+
+          // Payment already exists, notify success
+          const existingPayment = await Payment.findOne({
+            orderId,
+            status: "SUCCESS",
+          });
+
+          if (existingPayment) {
+            this.socketService.notifyPaymentSuccess(userId, {
+              paymentId: existingPayment._id.toString(),
+              orderId,
+              amount: order.amount,
+              provider: "STRIPE",
+              confirmedAt: existingPayment.createdAt,
+            });
+          }
+
+          return existingPayment;
+        }
+        throw err;
+      }
+    } catch (err: any) {
+      await dbSession.abortTransaction();
+      dbSession.endSession();
+
+      logger.error(`Payment confirmation failed`, {
+        orderId,
+        userId,
+        error: err.message,
+      });
+
+      this.socketService.notifyPaymentFailure(userId, {
+        paymentId: sessionId,
+        orderId,
+        reason: err.message || "Payment processing failed",
+        retryable: !["Order not found", "Unauthorized"].includes(err.message),
+      });
+
+      throw err;
+    }
+  }
+
+  /**
+   * Handle payment failures from Stripe
+   */
+  async failStripePayment(
+    stripSession: Stripe.Checkout.Session
+  ) {
+    const { orderId, userId } = stripSession.metadata as {
+      orderId: string;
+      userId: string;
+    };
+
+    const dbSession = await mongoose.startSession();
+
+    try {
+      dbSession.startTransaction();
+
+      const payment = await Payment.findOne({
+        externalRef: stripSession.id,
+      }).session(dbSession);
+
+      if (!payment) {
+        throw new ApiError("Payment not found", 404);
+      }
+
+      payment.status = "FAILED";
+      await payment.save({ session: dbSession });
+
+      await dbSession.commitTransaction();
+      dbSession.endSession();
+
+      this.socketService.notifyPaymentFailure(userId, {
+        paymentId: payment._id.toString(),
+        orderId,
+        reason: "Stripe payment failed",
+        retryable: true,
+      });
+
+      logger.info(`Payment marked as failed`, {
+        paymentId: payment._id,
+        orderId,
+      });
+
+      return payment;
+    } catch (err) {
+      await dbSession.abortTransaction();
+      dbSession.endSession();
+      throw err;
+    }
+  }
+
+  /**
+   * Handle refunds
+   */
+  async handleRefund(
+    userId: string,
+    orderId: string,
+    chargeData: any
+  ) {
+    const dbSession = await mongoose.startSession();
+
+    try {
+      dbSession.startTransaction();
+
+      const payment = await Payment.findOne({ orderId }).session(dbSession);
+      if (!payment) throw new ApiError("Payment not found", 404);
+
+      payment.status = "REFUNDED";
+      await payment.save({ session: dbSession });
+
+      const order = await Order.findById(orderId).session(dbSession);
+      if (order) {
+        order.status = "REFUNDED";
+        await order.save({ session: dbSession });
+      }
+
+      await dbSession.commitTransaction();
+      dbSession.endSession();
+
+      this.socketService.notifyRefundProcessed(userId, {
+        paymentId: payment._id.toString(),
+        orderId,
+        amount: chargeData.amount_refunded / 100,
+        reason: chargeData.reason || "Refund processed",
+      });
+
+      logger.info(`Refund processed`, {
+        paymentId: payment._id,
+        amount: chargeData.amount_refunded / 100,
+      });
+
+      return payment;
+    } catch (err) {
+      await dbSession.abortTransaction();
+      dbSession.endSession();
+      throw err;
+    }
+  }
+}
+
+// ============================================================================
+// 4. STRIPE WEBHOOK HANDLER (With Socket Integration)
+// ============================================================================
+
+// src/controllers/payment.controller.ts (UPDATED)
+import asyncHandler from "express-async-handler";
+import Stripe from "stripe";
+import PaymentService from "../../services/payment.service";
+import PaymentSocketService from "../../services/paymentSocket.service";
+import ApiError from "../../utils/apiError";
+import { getIO } from "../../config/socket"; // Export from socket.ts
+import logger from "../../utils/logger";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+const io = getIO();
+const paymentSocketService = new PaymentSocketService(io);
+const paymentService = new PaymentService(paymentSocketService);
+
+/**
+ * Stripe webhook handler
+ * Called by Stripe when payment status changes
+ */
+const handleStripeWebhook = asyncHandler(async (req: any, res) => {
+  const sig = req.headers["stripe-signature"];
+  const rawBody = req.rawBody; // Express middleware must provide this
+
+  let event: Stripe.Event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      sig as string,
+      process.env.STRIPE_WEBHOOK_SECRET as string
+    );
+  } catch (err: any) {
+    logger.error(`Webhook signature verification failed: ${err.message}`);
+    return res
+      .status(400)
+      .json({ error: `Webhook Error: ${err.message}` });
+  }
+
+  try {
+    logger.info(`Processing Stripe webhook`, { eventType: event.type });
+
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        
+        logger.info(`Checkout session completed`, { sessionId: session.id });
+        
+        await paymentService.confirmStripePayment(session);
+        break;
+      }
+
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        
+        logger.warn(`Async payment failed`, { sessionId: session.id });
+        
+        await paymentService.failStripePayment(session);
+        break;
+      }
+
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        const metadata = charge.metadata;
+
+        logger.info(`Charge refunded`, { chargeId: charge.id });
+        
+        await paymentService.handleRefund(
+          metadata.userId,
+          metadata.orderId,
+          charge
+        );
+        break;
+      }
+
+      default:
+        logger.debug(`Unhandled webhook event type: ${event.type}`);
+    }
+
+    res.status(200).json({ received: true });
+  } catch (err: any) {
+    logger.error(`Webhook processing error`, {
+      eventType: event.type,
+      error: err.message,
+    });
+
+    // Return 200 to prevent Stripe retries, but log for monitoring
+    res.status(200).json({ received: true, processed: false });
+  }
+});
+
+/**
+ * Health check for webhook endpoint
+ */
+const webhookHealth = asyncHandler(async (req: any, res) => {
+  res.status(200).json({
+    status: "ok",
+    connectedClients: paymentSocketService.getConnectedUsers(),
+  });
+});
+
+export { handleStripeWebhook, webhookHealth };
+
+// ============================================================================
+// 5. MIDDLEWARE FOR RAW BODY (Required for Stripe)
+// ============================================================================
+
+// src/middleware/rawBody.middleware.ts
+import bodyParser from "body-parser";
+
+export const rawBodyMiddleware = bodyParser.raw({
+  type: "application/json",
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString("utf8");
+  },
+});
+
+// ============================================================================
+// 6. EXPRESS SERVER SETUP WITH SOCKET.IO
+// ============================================================================
+
+// src/server.ts (UPDATED)
+import express from "express";
+import { createServer } from "http";
+import { initializeSocket } from "./config/socket";
+import { rawBodyMiddleware } from "./middleware/rawBody.middleware";
+
+const app = express();
+const httpServer = createServer(app);
+
+// Initialize Socket.io
+const io = initializeSocket(httpServer);
+
+// Store io in app for use in other modules
+app.set("io", io);
+
+// Stripe webhook must use raw body (before JSON parsing)
+app.post("/api/v1/webhooks/stripe", rawBodyMiddleware, handleStripeWebhook);
+
+// Other routes use normal JSON parsing
+app.use(express.json());
+
+// Routes
+import paymentRoutes from "./routes/payment.routes";
+app.use("/api/v1/payments", paymentRoutes);
+
+// Start server
+const PORT = process.env.PORT || 5000;
+httpServer.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// Export for webhook handler access
+export const getIO = () => io;
+
+// ============================================================================
+// 7. PAYMENT ROUTES WITH SOCKET INTEGRATION
+// ============================================================================
+
+// src/routes/payment.routes.ts (UPDATED)
+import { Router } from "express";
+import {
+  createPayment,
+  createCheckoutSession,
+} from "./payment.controller";
+import { handleStripeWebhook, webhookHealth } from "./webhook.controller";
+import authService from "../../services/auth.service";
+
+const router = Router();
+
+// User payment creation
+router.post(
+  "/",
+  authService.authenticate,
+  authService.authorize("user"),
+  createPaymentValidator,
+  createPayment
+);
+
+// Stripe checkout session
+router.post(
+  "/createCheckoutSession",
+  authService.authenticate,
+  authService.authorize("user"),
+  createCheckoutSessionValidator,
+  createCheckoutSession
+);
+
+// Stripe webhook (no auth required)
+router.post("/webhooks/stripe", handleStripeWebhook);
+
+// Webhook health
+router.get("/webhooks/health", webhookHealth);
+
+export default router;
