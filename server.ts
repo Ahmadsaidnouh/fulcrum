@@ -3,6 +3,9 @@ import cors from "cors";
 import dotenv from "dotenv";
 import morgan from "morgan";
 
+import { setServers } from "node:dns/promises"; // to fix
+
+
 dotenv.config();
 import ApiError from "./src/utils/apiError";
 import globalError from "./src/middlewares/error.middleware";
@@ -14,6 +17,12 @@ import {
   webhookRoutes,
   staticRoutes,
 } from "./src/routes/allroutes";
+
+// Fix for development environment to avoid DNS resolution issues
+if (process.env.NODE_ENV === "development") {
+  console.log(`Setting custom DNS servers for development environment...`);
+  setServers(["1.1.1.1", "8.8.8.8"]);
+}
 
 // Connect with db
 dbConnection();
